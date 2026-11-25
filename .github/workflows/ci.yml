@@ -1,0 +1,103 @@
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Test (Python ${{ matrix.python-version }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ['3.10', '3.11', '3.12', '3.13']
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install base and dev dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Verify optional otel tests skip cleanly without otel extra
+        run: pytest -v --tb=short google/antigravity/utils/otel_test.py
+
+      - name: Install optional otel dependencies
+        run: pip install -e ".[dev,otel]"
+
+      - name: Run full test suite
+        run: pytest -v --tb=short
+
+  build:
+    name: Build & Verify Package
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install build tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install build twine
+
+      - name: Build wheel and sdist
+        run: python -m build --outdir dist/
+
+      - name: Validate distribution metadata
+        run: twine check dist/*
+
+      - name: Verify wheel installs and imports cleanly
+        env:
+          WORKSPACE: ${{ github.workspace }}
+        working-directory: /tmp
+        run: |
+          python -m venv /tmp/verify-venv
+          /tmp/verify-venv/bin/pip install "$WORKSPACE"/dist/*.whl
+          /tmp/verify-venv/bin/python -c "
+          import pathlib
+          import google.antigravity as ag
+          from google.antigravity import Agent, LocalAgentConfig
+          from google.antigravity.connections.local import LocalConnection, LocalConnectionStrategy
+          from google.antigravity.conversation.conversation import Conversation
+          from google.antigravity.hooks.policy import allow, deny, ask_user, enforce
+          from google.antigravity.tools.tool_runner import ToolRunner
+          from google.antigravity.triggers import every
+          loaded = pathlib.Path(ag.__file__).resolve()
+          assert 'site-packages' in loaded.parts, f'Expected site-packages import, got {loaded}'
+          print('Verified wheel import from:', loaded)
+          "
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-packages
+          path: dist/
+          retention-days: 14

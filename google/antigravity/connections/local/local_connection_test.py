@@ -1983,6 +1983,10 @@ class GetDefaultBinaryPathTest(unittest.TestCase):
     mock_dist.assert_called_once_with("google-antigravity")
     mock_file.locate.assert_called_once()
 
+  @unittest.skipUnless(
+      hasattr(local_connection, "resources"),
+      "Internal pyglib resources module is not available in OSS builds.",
+  )
   @mock.patch.dict("os.environ", {}, clear=True)
   @mock.patch("importlib.metadata.distribution")
   def test_returns_internal_pyglib_resource_path(self, mock_dist):
@@ -2000,7 +2004,7 @@ class GetDefaultBinaryPathTest(unittest.TestCase):
       mock_dist.assert_not_called()
 
   @mock.patch.dict("os.environ", {}, clear=True)
-  @mock.patch.object(local_connection, "resources", None)
+  @mock.patch.object(local_connection, "resources", None, create=True)
   @mock.patch("importlib.metadata.distribution")
   @mock.patch("importlib.resources.files")
   @mock.patch("os.path.exists")
@@ -3255,6 +3259,16 @@ class LocalConnectionSendTest(unittest.IsolatedAsyncioTestCase):
 
 class LocalAgentConfigTest(absltest.TestCase):
 
+  def setUp(self):
+    super().setUp()
+    patcher = mock.patch.object(
+        local_connection,
+        "_get_default_binary_path",
+        return_value="/fake/localharness",
+    )
+    patcher.start()
+    self.addCleanup(patcher.stop)
+
   def test_create_strategy(self):
     config = local_connection_config.LocalAgentConfig(
         system_instructions="test instructions",
@@ -3943,9 +3957,18 @@ class LocalConnectionSubagentsTest(unittest.IsolatedAsyncioTestCase):
 
   def setUp(self):
     super().setUp()
-    self.temp_dir = self.enterContext(tempfile.TemporaryDirectory())
+    temp_dir = tempfile.TemporaryDirectory()
+    self.addCleanup(temp_dir.cleanup)
+    self.temp_dir = temp_dir.name
     self.workspace = pathlib.Path(self.temp_dir) / "workspace"
     self.workspace.mkdir()
+    patcher = mock.patch.object(
+        local_connection,
+        "_get_default_binary_path",
+        return_value="/fake/localharness",
+    )
+    patcher.start()
+    self.addCleanup(patcher.stop)
 
   def test_builds_subagents_proto_correctly(self):
     def my_custom_tool():
