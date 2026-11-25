@@ -165,6 +165,7 @@ from google.antigravity import types
 from google.antigravity.connections.local import litert_connection
 from google.antigravity.connections.local import litert_connection_config
 from google.antigravity.connections.local import litert_server
+from google.antigravity.connections.local import local_connection
 from google.antigravity.connections.local import local_openai_connection_config
 
 # pylint: enable=g-import-not-at-top
@@ -174,6 +175,16 @@ _urlopen_no_proxy = litert_connection._urlopen_no_proxy
 
 
 class LiteRTConnectionTest(unittest.IsolatedAsyncioTestCase):
+
+  def setUp(self):
+    super().setUp()
+    patcher = mock.patch.object(
+        local_connection,
+        "_get_default_binary_path",
+        return_value="/fake/localharness",
+    )
+    patcher.start()
+    self.addCleanup(patcher.stop)
 
   @mock.patch("os.path.exists")
   @mock.patch("subprocess.Popen")
@@ -665,6 +676,11 @@ class LiteRTConnectionTest(unittest.IsolatedAsyncioTestCase):
         litert_connection, "_urlopen_no_proxy"
     ) as mock_urlopen, mock.patch(
         "os.path.exists", return_value=True
+    ), mock.patch.object(
+        local_connection.LocalConnectionStrategy,
+        "__aenter__",
+        new_callable=mock.AsyncMock,
+        return_value=None,
     ):
       mock_resp = mock.MagicMock()
       mock_resp.status = 200

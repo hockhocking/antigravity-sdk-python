@@ -66,4 +66,5 @@ include = ["google*"]
 [tool.setuptools.package-data]
 "google.antigravity.bin" = ["*"]
 
-
+[tool.pytest.ini_options]
+python_files = ["*_test.py"]
